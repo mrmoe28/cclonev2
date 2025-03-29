@@ -3,241 +3,205 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { AIAgent } from '@/lib/aiAgent';
 import CodePreview from '@/components/features/CodePreview';
-import WebPreview from '@/components/features/WebPreview';
+import { WebPreview } from '@/components/features/WebPreview';
+import { editor } from 'monaco-editor';
+
+interface CodeState {
+  html: string;
+  css: string;
+  javascript: string;
+}
 
 interface AICodingPaneProps {
   className?: string;
 }
 
-interface ParsedCode {
-  html: string;
-  css: string;
-  javascript: string;
-  fullCode: string;
-}
+type TabType = 'html' | 'css' | 'javascript';
 
-export default function AICodingPane({ className = '' }: AICodingPaneProps) {
-  const [prompt, setPrompt] = useState('');
+export default function AICodingPane({ className }: AICodingPaneProps) {
+  const [activeTab, setActiveTab] = useState<TabType>('html');
+  const [code, setCode] = useState<CodeState>({ html: '', css: '', javascript: '' });
   const [isProcessing, setIsProcessing] = useState(false);
-  const [conversation, setConversation] = useState<Array<{ role: 'user' | 'assistant', content: string }>>([]);
   const [error, setError] = useState<string | null>(null);
-  const [currentCode, setCurrentCode] = useState('');
-  const [parsedCode, setParsedCode] = useState<ParsedCode>({
-    html: '',
-    css: '',
-    javascript: '',
-    fullCode: ''
-  });
-  const [streamedResponse, setStreamedResponse] = useState('');
-  const [isStreaming, setIsStreaming] = useState(false);
-  const [activeTab, setActiveTab] = useState<'code' | 'preview'>('code');
+  const [prompt, setPrompt] = useState('');
   const aiAgentRef = useRef<AIAgent | null>(null);
-  const chatContainerRef = useRef<HTMLDivElement>(null);
 
+  // Initialize AI agent and restore code state
   useEffect(() => {
     const apiKey = process.env.NEXT_PUBLIC_OPENAI_API_KEY;
     if (apiKey) {
-      aiAgentRef.current = new AIAgent(apiKey);
+      aiAgentRef.current = new AIAgent();
+      
+      // Try to restore code from localStorage
+      try {
+        const savedCode = localStorage.getItem('code');
+        if (savedCode) {
+          const parsedCode = JSON.parse(savedCode);
+          setCode(parsedCode);
+        }
+      } catch (err) {
+        console.error('Failed to restore saved state:', err);
+      }
     } else {
-      setError('OpenAI API key not found. AI features are disabled.');
+      setError('OpenAI API key not found. Please set NEXT_PUBLIC_OPENAI_API_KEY in your environment.');
     }
   }, []);
 
+  // Save code state to localStorage when it changes
   useEffect(() => {
-    if (chatContainerRef.current) {
-      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
-    }
-  }, [conversation]);
-
-  useEffect(() => {
-    const code = extractCodeFromResponse(streamedResponse);
-    setCurrentCode(code);
-    const parsed = parseCodeBlocks(code);
-    setParsedCode(parsed);
-  }, [streamedResponse]);
-
-  const parseCodeBlocks = (code: string): ParsedCode => {
-    const result: ParsedCode = {
-      html: '',
-      css: '',
-      javascript: '',
-      fullCode: code
-    };
-
-    // Extract HTML
-    const htmlMatch = code.match(/```html\n([\s\S]*?)```/);
-    if (htmlMatch) result.html = htmlMatch[1].trim();
-
-    // Extract CSS
-    const cssMatch = code.match(/```css\n([\s\S]*?)```/);
-    if (cssMatch) result.css = cssMatch[1].trim();
-
-    // Extract JavaScript/TypeScript
-    const jsMatch = code.match(/```(?:javascript|typescript)\n([\s\S]*?)```/);
-    if (jsMatch) result.javascript = jsMatch[1].trim();
-
-    // If no specific blocks found, try to guess the content type
-    if (!htmlMatch && !cssMatch && !jsMatch) {
-      if (code.includes('<')) {
-        result.html = code;
-      } else if (code.includes('{') && code.includes('}')) {
-        if (code.includes('@media') || code.includes(':')) {
-          result.css = code;
-        } else {
-          result.javascript = code;
-        }
-      }
-    }
-
-    return result;
-  };
-
-  const extractCodeFromResponse = (text: string): string => {
-    const codeBlockRegex = /```(?:\w+)?\n([\s\S]*?)```/;
-    const match = text.match(codeBlockRegex);
-    return match ? match[1].trim() : text;
-  };
-
-  const handleStream = (chunk: string) => {
-    setStreamedResponse(prev => prev + chunk);
-  };
+    localStorage.setItem('code', JSON.stringify(code));
+  }, [code]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!prompt.trim() || isProcessing || !aiAgentRef.current) return;
+    if (!aiAgentRef.current) {
+      setError('AI Agent not initialized. Please check your API key.');
+      return;
+    }
 
     setIsProcessing(true);
-    setIsStreaming(true);
-    setStreamedResponse('');
-    setCurrentCode('');
-    setParsedCode({
-      html: '',
-      css: '',
-      javascript: '',
-      fullCode: ''
-    });
-    setConversation(prev => [...prev, { role: 'user', content: prompt }]);
+    setError(null);
     
     try {
-      const response = await aiAgentRef.current.generateCode(prompt, handleStream);
-      setConversation(prev => [...prev, { role: 'assistant', content: response }]);
+      const response = await aiAgentRef.current.generateCode(prompt, code);
+      setCode(response);
       setPrompt('');
     } catch (err) {
       setError((err as Error).message);
+      console.error('Error generating code:', err);
     } finally {
       setIsProcessing(false);
-      setIsStreaming(false);
     }
   };
 
-  return (
-    <div className={`flex flex-col h-full bg-[#1E1E1E] ${className}`}>
-      <div className="flex-none p-4 border-b border-[#3C3C3C]">
-        <h2 className="text-lg font-semibold text-white">AI Coding Assistant</h2>
-      </div>
+  const handleClearCode = () => {
+    if (!aiAgentRef.current) return;
+    
+    setCode({ html: '', css: '', javascript: '' });
+    aiAgentRef.current.clearHistory();
+    
+    // Clear localStorage
+    localStorage.removeItem('code');
+  };
 
-      <div className="flex-1 flex">
-        <div className="w-1/2 border-r border-[#3C3C3C] flex flex-col">
-          <div 
-            ref={chatContainerRef}
-            className="flex-1 overflow-y-auto p-4 space-y-4"
-          >
-            {conversation.map((message, index) => (
-              <div
-                key={index}
-                className={`p-3 rounded-lg ${
-                  message.role === 'user'
-                    ? 'bg-[#264F78] ml-8'
-                    : 'bg-[#2D2D2D] mr-8'
+  const editorOptions: editor.IStandaloneEditorConstructionOptions = {
+    minimap: { enabled: false },
+    fontSize: 14,
+    lineNumbers: 'on',
+    scrollBeyondLastLine: false,
+    automaticLayout: true,
+    wordWrap: 'on',
+    renderWhitespace: 'selection',
+    tabSize: 2,
+    insertSpaces: true,
+    bracketPairColorization: { enabled: true },
+    guides: { bracketPairs: true },
+    folding: true,
+    foldingStrategy: 'indentation',
+    suggestOnTriggerCharacters: true,
+    acceptSuggestionOnEnter: 'on',
+    snippetSuggestions: 'top',
+    formatOnPaste: true,
+    formatOnType: true,
+  };
+
+  return (
+    <div className={`flex flex-col h-full ${className}`}>
+      <div className="flex-none h-10 bg-[#2D2D2D] border-b border-[#3C3C3C]">
+        <div className="flex items-center justify-between px-4 h-full">
+          <div className="flex items-center space-x-4">
+            <span className="text-sm font-medium text-[#CCCCCC]">AI Code Generator</span>
+            <div className="flex items-center space-x-2">
+              <button
+                onClick={() => setActiveTab('html')}
+                className={`px-2 py-1 text-xs rounded ${
+                  activeTab === 'html'
+                    ? 'bg-[#3C3C3C] text-white'
+                    : 'text-[#CCCCCC] hover:bg-[#3C3C3C]'
                 }`}
               >
-                <div className="text-sm text-[#CCCCCC]">
-                  {message.role === 'assistant' ? (
-                    <pre className="whitespace-pre-wrap font-mono text-sm">
-                      {message.content}
-                    </pre>
-                  ) : (
-                    message.content
-                  )}
-                </div>
-              </div>
-            ))}
-            {isProcessing && (
-              <div className="flex items-center justify-center p-4">
-                <div className="animate-pulse text-[#CCCCCC]">Generating code...</div>
-              </div>
+                HTML
+              </button>
+              <button
+                onClick={() => setActiveTab('css')}
+                className={`px-2 py-1 text-xs rounded ${
+                  activeTab === 'css'
+                    ? 'bg-[#3C3C3C] text-white'
+                    : 'text-[#CCCCCC] hover:bg-[#3C3C3C]'
+                }`}
+              >
+                CSS
+              </button>
+              <button
+                onClick={() => setActiveTab('javascript')}
+                className={`px-2 py-1 text-xs rounded ${
+                  activeTab === 'javascript'
+                    ? 'bg-[#3C3C3C] text-white'
+                    : 'text-[#CCCCCC] hover:bg-[#3C3C3C]'
+                }`}
+              >
+                JavaScript
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex-1 flex flex-col min-h-0">
+        {/* AI Agent Section */}
+        <div className="flex-none border-b border-[#3C3C3C] bg-[#252526]">
+          {/* Chat Messages */}
+          <div className="max-h-48 overflow-y-auto p-4 space-y-4">
+            {error && (
+              <div className="text-red-500 mb-4">Error: {error}</div>
             )}
           </div>
 
-          {error && (
-            <div className="flex-none p-3 bg-red-900/20 border-t border-red-900/30">
-              <p className="text-red-400 text-sm">{error}</p>
-            </div>
-          )}
-
-          <form onSubmit={handleSubmit} className="flex-none p-4 border-t border-[#3C3C3C]">
+          {/* Prompt Input */}
+          <form onSubmit={handleSubmit} className="p-4 border-t border-[#3C3C3C]">
             <div className="flex space-x-2">
               <input
                 type="text"
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
-                placeholder="Describe the webpage you want to create..."
-                className="flex-1 bg-[#2D2D2D] text-[#CCCCCC] px-4 py-2 rounded-lg border border-[#3C3C3C] focus:outline-none focus:border-[#264F78]"
+                placeholder={isProcessing ? 'Processing...' : 'Ask the AI to generate code...'}
+                className="flex-1 bg-[#3C3C3C] text-white placeholder-[#808080] rounded-md px-4 py-2 focus:outline-none focus:ring-2 focus:ring-[#264F78]"
                 disabled={isProcessing}
               />
               <button
                 type="submit"
-                disabled={isProcessing || !prompt.trim()}
-                className={`px-4 py-2 rounded-lg bg-[#264F78] text-white font-medium
-                  ${isProcessing || !prompt.trim() 
-                    ? 'opacity-50 cursor-not-allowed' 
-                    : 'hover:bg-[#264F78]/80'}`}
+                disabled={isProcessing || !aiAgentRef.current}
+                title="Send prompt to AI"
+                className={`px-4 py-2 rounded-md transition-colors ${
+                  isProcessing || !aiAgentRef.current
+                    ? 'bg-[#3C3C3C] text-[#808080]'
+                    : 'bg-[#264F78] text-white hover:bg-[#264F78]/80'
+                }`}
               >
-                Generate
+                Send
               </button>
             </div>
           </form>
         </div>
 
-        <div className="w-1/2 flex flex-col">
-          <div className="flex-none px-4 pt-4">
-            <div className="flex space-x-2">
-              <button
-                onClick={() => setActiveTab('code')}
-                className={`px-4 py-2 rounded-t-lg text-sm font-medium transition-colors
-                  ${activeTab === 'code'
-                    ? 'bg-[#2D2D2D] text-white border-t border-l border-r border-[#3C3C3C]'
-                    : 'text-[#CCCCCC] hover:text-white'}`}
-              >
-                Code
-              </button>
-              <button
-                onClick={() => setActiveTab('preview')}
-                className={`px-4 py-2 rounded-t-lg text-sm font-medium transition-colors
-                  ${activeTab === 'preview'
-                    ? 'bg-[#2D2D2D] text-white border-t border-l border-r border-[#3C3C3C]'
-                    : 'text-[#CCCCCC] hover:text-white'}`}
-              >
-                Preview
-              </button>
-            </div>
+        {/* Editor/Preview Section */}
+        <div className="flex-1 flex min-h-0">
+          <div className="flex-1 overflow-hidden">
+            <CodePreview
+              value={activeTab === 'html' ? code.html : activeTab === 'css' ? code.css : code.javascript}
+              onChange={(value: string) => {
+                if (activeTab === 'html') setCode(prev => ({ ...prev, html: value }));
+                else if (activeTab === 'css') setCode(prev => ({ ...prev, css: value }));
+                else setCode(prev => ({ ...prev, javascript: value }));
+              }}
+              language={activeTab === 'javascript' ? 'javascript' : activeTab === 'css' ? 'css' : 'html'}
+              theme="vs-dark"
+              options={editorOptions}
+            />
           </div>
-
-          <div className="flex-1 p-4 pt-0">
-            {activeTab === 'code' ? (
-              <CodePreview
-                code={currentCode}
-                isStreaming={isStreaming}
-                title="Generated Code"
-              />
-            ) : (
-              <WebPreview
-                html={parsedCode.html}
-                css={parsedCode.css}
-                javascript={parsedCode.javascript}
-                isStreaming={isStreaming}
-              />
-            )}
+          
+          <div className="w-1/2 border-l border-[#3C3C3C] overflow-hidden">
+            <WebPreview code={code} />
           </div>
         </div>
       </div>

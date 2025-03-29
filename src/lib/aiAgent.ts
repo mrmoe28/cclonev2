@@ -1,64 +1,72 @@
 import OpenAI from 'openai';
+import { CodeState, ConversationMessage } from '@/types';
+import { OPENAI_API_URL, OPENAI_MODEL, SYSTEM_PROMPT, ERROR_MESSAGES } from './constants';
 
-interface CodeState {
-  html: string;
-  css: string;
-  javascript: string;
+export class AIAgentError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'AIAgentError';
+  }
 }
 
 export class AIAgent {
   private apiKey: string;
-  private conversationHistory: { role: string; content: string }[];
+  private conversationHistory: ConversationMessage[];
   private currentCode: CodeState;
 
   constructor() {
     this.apiKey = process.env.NEXT_PUBLIC_OPENAI_API_KEY || '';
+    if (!this.apiKey) {
+      throw new AIAgentError(ERROR_MESSAGES.API_KEY_MISSING);
+    }
     this.conversationHistory = [];
     this.currentCode = { html: '', css: '', javascript: '' };
   }
 
   private async makeOpenAIRequest(prompt: string): Promise<string> {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this.apiKey}`,
-      },
-      body: JSON.stringify({
-        model: 'gpt-3.5-turbo',
-        messages: [
-          {
-            role: 'system',
-            content: `You are a web development expert. Generate HTML, CSS, and JavaScript code based on the user's request. 
-            Format your response with code blocks using markdown syntax:
-            \`\`\`html
-            [HTML code here]
-            \`\`\`
-            \`\`\`css
-            [CSS code here]
-            \`\`\`
-            \`\`\`javascript
-            [JavaScript code here]
-            \`\`\`
-            Current code state:
-            HTML: ${this.currentCode.html}
-            CSS: ${this.currentCode.css}
-            JavaScript: ${this.currentCode.javascript}`,
-          },
-          {
-            role: 'user',
-            content: prompt,
-          },
-        ],
-      }),
-    });
+    try {
+      const response = await fetch(OPENAI_API_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.apiKey}`,
+        },
+        body: JSON.stringify({
+          model: OPENAI_MODEL,
+          messages: [
+            {
+              role: 'system',
+              content: this.getSystemPrompt(),
+            },
+            {
+              role: 'user',
+              content: prompt,
+            },
+          ],
+        }),
+      });
 
-    if (!response.ok) {
-      throw new Error('Failed to generate code');
+      if (!response.ok) {
+        const error = await response.json();
+        throw new AIAgentError(error.error?.message || ERROR_MESSAGES.API_ERROR);
+      }
+
+      const data = await response.json();
+      return data.choices[0].message.content;
+    } catch (error) {
+      if (error instanceof AIAgentError) {
+        throw error;
+      }
+      throw new AIAgentError(ERROR_MESSAGES.API_ERROR);
     }
+  }
 
-    const data = await response.json();
-    return data.choices[0].message.content;
+  private getSystemPrompt(): string {
+    return `${SYSTEM_PROMPT}
+    Current code state:
+    HTML: ${this.currentCode.html}
+    CSS: ${this.currentCode.css}
+    JavaScript: ${this.currentCode.javascript}`;
   }
 
   private extractCodeBlocks(response: string): CodeState {
@@ -74,14 +82,25 @@ export class AIAgent {
   }
 
   public async generateCode(prompt: string, currentCode: CodeState): Promise<CodeState> {
-    this.currentCode = currentCode;
-    const response = await this.makeOpenAIRequest(prompt);
-    const codeBlocks = this.extractCodeBlocks(response);
-    this.currentCode = codeBlocks;
-    return codeBlocks;
+    try {
+      this.currentCode = currentCode;
+      const response = await this.makeOpenAIRequest(prompt);
+      const codeBlocks = this.extractCodeBlocks(response);
+      this.currentCode = codeBlocks;
+      this.conversationHistory.push(
+        { role: 'user', content: prompt },
+        { role: 'assistant', content: response }
+      );
+      return codeBlocks;
+    } catch (error) {
+      if (error instanceof AIAgentError) {
+        throw error;
+      }
+      throw new AIAgentError(ERROR_MESSAGES.GENERATION_ERROR);
+    }
   }
 
-  public getConversationHistory(): { role: string; content: string }[] {
+  public getConversationHistory(): ConversationMessage[] {
     return this.conversationHistory;
   }
 

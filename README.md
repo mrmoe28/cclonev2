@@ -22,39 +22,43 @@ A VS Code-like development environment with AI-powered code generation and live 
 ### Installation
 
 1. Clone the repository:
+
 ```bash
 git clone https://github.com/yourusername/ai-code-generator.git
 cd ai-code-generator
 ```
 
-2. Install dependencies:
+1. Install dependencies:
+
 ```bash
 npm install
 ```
 
-3. Create a `.env.local` file in the root directory and add your OpenAI API key:
+1. Create a `.env.local` file in the root directory and add your OpenAI API key:
+
 ```env
 NEXT_PUBLIC_OPENAI_API_KEY=your_api_key_here
 ```
 
-4. Run the development server:
+1. Run the development server:
+
 ```bash
 npm run dev
 ```
 
-5. Open [http://localhost:3000](http://localhost:3000) in your browser.
+1. Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 ## Usage
 
 1. Enter a prompt describing the code you want to generate
-2. The AI will generate HTML, CSS, and JavaScript code
-3. View the live preview in the right pane
-4. Make modifications in the editor tabs
-5. Use the conversation memory to refine and update the code
+1. The AI will generate HTML, CSS, and JavaScript code
+1. View the live preview in the right pane
+1. Make modifications in the editor tabs
+1. Use the conversation memory to refine and update the code
 
 ## Project Structure
 
-```
+```text
 src/
 ├── app/                   # Next.js app directory
 ├── components/           
@@ -72,10 +76,10 @@ src/
 ## Contributing
 
 1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+1. Create your feature branch (`git checkout -b feature/amazing-feature`)
+1. Commit your changes (`git commit -m 'Add some amazing feature'`)
+1. Push to the branch (`git push origin feature/amazing-feature`)
+1. Open a Pull Request
 
 ## License
 

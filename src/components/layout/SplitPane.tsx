@@ -1,7 +1,6 @@
 'use client';
-
 import React, { useState, useCallback, useEffect } from 'react';
-import Terminal from './Terminal';
+import { Terminal } from './Terminal';
 import AICodingPane from './AICodingPane';
 
 export default function SplitPane() {
@@ -53,7 +52,11 @@ export default function SplitPane() {
         className="h-full"
         style={{ width: `${splitPosition}%` }}
       >
-        <Terminal />
+        <Terminal onSubmit={function (prompt: string): Promise<void> {
+          throw new Error('Function not implemented.');
+        } } onClear={function (): void {
+          throw new Error('Function not implemented.');
+        } } isProcessing={false} conversation={[]} />
       </div>
 
       <div

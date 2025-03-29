@@ -1,22 +1,16 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { Terminal } from '@/components/layout/Terminal';
 import { WebPreview } from '@/components/features/WebPreview';
 import { GitHubButton } from '@/components/features/GitHubButton';
 import { AIAgent } from '@/lib/aiAgent';
 import { useToast } from '@/components/ui/use-toast';
-
-interface CodeState {
-  html: string;
-  css: string;
-  javascript: string;
-}
+import { useCodeState } from '@/hooks/useCodeState';
+import { STORAGE_KEYS } from '@/lib/constants';
 
 export default function Home() {
-  const [code, setCode] = useState<CodeState>({ html: '', css: '', javascript: '' });
-  const [conversation, setConversation] = useState<string[]>([]);
-  const [isProcessing, setIsProcessing] = useState(false);
+  const { code, conversation, clearCode, updateCode, addToConversation } = useCodeState();
   const { toast } = useToast();
 
   useEffect(() => {
@@ -24,7 +18,7 @@ export default function Home() {
     const params = new URLSearchParams(window.location.search);
     const token = params.get('token');
     if (token) {
-      localStorage.setItem('github_token', token);
+      localStorage.setItem(STORAGE_KEYS.GITHUB_TOKEN, token);
       // Remove token from URL
       window.history.replaceState({}, '', '/');
       toast({
@@ -32,44 +26,25 @@ export default function Home() {
         description: 'Successfully connected to GitHub.',
       });
     }
-
-    // Load saved state
-    const savedCode = localStorage.getItem('code');
-    const savedConversation = localStorage.getItem('conversation');
-    if (savedCode) setCode(JSON.parse(savedCode));
-    if (savedConversation) setConversation(JSON.parse(savedConversation));
   }, []);
 
-  useEffect(() => {
-    // Save state
-    localStorage.setItem('code', JSON.stringify(code));
-    localStorage.setItem('conversation', JSON.stringify(conversation));
-  }, [code, conversation]);
-
   const handleSubmit = async (prompt: string) => {
-    setIsProcessing(true);
     try {
       const agent = new AIAgent();
       const result = await agent.generateCode(prompt, code);
-      setCode(result);
-      setConversation([...conversation, `> ${prompt}`, `< Generated code:\n${JSON.stringify(result, null, 2)}`]);
+      updateCode(result);
+      addToConversation([
+        `> ${prompt}`,
+        `< Generated code:\n${JSON.stringify(result, null, 2)}`
+      ]);
     } catch (error) {
       console.error('Error generating code:', error);
       toast({
         title: 'Error',
-        description: 'Failed to generate code. Please try again.',
+        description: error instanceof Error ? error.message : 'Failed to generate code. Please try again.',
         variant: 'destructive',
       });
-    } finally {
-      setIsProcessing(false);
     }
-  };
-
-  const handleClearCode = () => {
-    setCode({ html: '', css: '', javascript: '' });
-    setConversation([]);
-    localStorage.removeItem('code');
-    localStorage.removeItem('conversation');
   };
 
   return (
@@ -78,8 +53,8 @@ export default function Home() {
         <div className="flex w-1/2 flex-col">
           <Terminal
             onSubmit={handleSubmit}
-            onClear={handleClearCode}
-            isProcessing={isProcessing}
+            onClear={clearCode}
+            isProcessing={false}
             conversation={conversation}
           />
         </div>
